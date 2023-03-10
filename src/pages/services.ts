@@ -21,3 +21,10 @@ export async function applyRequest(data: any) {
     data,
   });
 }
+
+export async function getStampData(data: any) {
+  return request<Record<string, any>>('/api/apply/all/search', {
+    method: 'POST',
+    data,
+  });
+}

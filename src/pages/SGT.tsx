@@ -17,41 +17,45 @@ import {
   Modal,
   Row,
   Select,
+  Space,
   Spin,
 } from 'antd';
-import { useEffect, useState, useRef, useCallback } from 'react';
-import dayjs from 'dayjs';
+import { useEffect, useState, useRef, useCallback, Key } from 'react';
 import './index.less';
 import { applyRequest, findDataById } from './services';
+import type { RangePickerProps } from 'antd/lib/date-picker';
+import moment from 'moment';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 const Sgt = () => {
-  const applyId = sessionStorage.getItem('applyId');
+  const applyData = JSON.parse(sessionStorage.getItem('applyData')!);
+  const webSocket = useRef<WebSocket | null>(null);
   const [messages, setMessages] = useState<string>('');
   const [open, setOpen] = useState(false);
-  // const messages = useRef<String | null>(null);
   const [canPrint, setCanPrint] = useState(false);
   const [btnControl, setBtnControl] = useState(false);
-  const webSocket = useRef<WebSocket | null>(null);
-  const tokenid = '640a8085e4e14a29f273570e32020e28ef53';
+
+  const tokenid = '640af3482abf1b587681e138b74ce84495ca';
   const wsUrl = 'ws://dev-seal.signetz.com:10001/startPrint/' + tokenid;
 
-  const findDataByIdFn = useCallback(() => {
-    (async () => {
-      if (applyId) {
-        const res = await findDataById({
-          tokenid,
-          id: applyId,
-        });
-        setCanPrint(res.data.canPrint || false);
-      }
-    })();
-  }, [applyId]);
+  // const findDataByIdFn = useCallback(() => {
+  //   (async () => {
+  //     if (applyId) {
+  //       const res = await findDataById({
+  //         tokenid,
+  //         id: applyId,
+  //       });
+  //       console.log(res);
+  //       setCanPrint(res.data.canPrint || false);
+  //     }
+  //   })();
+  // }, [applyId]);
 
-  useEffect(() => {
-    findDataByIdFn();
-  }, [findDataByIdFn]);
+  // useEffect(() => {
+  //   findDataByIdFn();
+  // }, [findDataByIdFn]);
+
   //websocket连接
-
-  const testWebSocket = (wsUri: string | URL) => {
+  const testWebSocket = (wsUri: string | URL, applyId: string) => {
     setMessages('正在搜索设备信息...');
     webSocket.current = new WebSocket(wsUri);
     //接收消息
@@ -68,7 +72,7 @@ const Sgt = () => {
             setBtnControl(true);
           }
           if (obj.ret === 3) {
-            // gaiYinFn();
+            // stampFn();
             webSocket.current!.send(
               JSON.stringify({
                 tokenId: tokenid,
@@ -85,7 +89,7 @@ const Sgt = () => {
       }
     };
     //连接成功
-    webSocket.current.onopen = (event) => {
+    webSocket.current.onopen = () => {
       // message.success('连接成功');
       webSocket.current!.send(
         JSON.stringify({
@@ -109,18 +113,29 @@ const Sgt = () => {
     };
   };
 
-  const gaiYinFn = async () => {
+  const stampFn = async (applyId: string) => {
     setOpen(true);
     if (!webSocket.current || webSocket.current?.readyState === 3) {
-      testWebSocket(wsUrl);
+      testWebSocket(wsUrl, applyId);
     }
   };
 
-  const applyRequestFn = async (data) => {
+  const applyRequestFn = async (data: {
+    tokenId: string;
+    approveStatus: string;
+    userId: string;
+    applyCount: string;
+    startTime: string;
+    endTime: string;
+    isconsole: boolean;
+    sealId: string;
+    title: string;
+    type: string;
+  }) => {
     const res = await applyRequest(data);
     if (res.head.msg === 'SUCCESS') {
       message.success('提交成功');
-      sessionStorage.setItem('applyId', res.data[0].id);
+      sessionStorage.setItem('applyData', JSON.stringify(res.data));
     } else {
       message.error('提交失败');
     }
@@ -131,39 +146,94 @@ const Sgt = () => {
       tokenId: tokenid,
       approveStatus: 'pass',
       userId: '63ec3acde84bd351332c7fcd',
-      applyCount: values.applyCount,
-      startTime: dayjs(values.date[0], 'YYYY-MM-DD'),
-      endTime: dayjs(values.date[1], 'YYYY-MM-DD'),
+      startTime: values.date[0].format('YYYY-MM-DD HH:mm:ss'),
+      endTime: values.date[1].format('YYYY-MM-DD HH:mm:ss'),
       isconsole: values.isconsole ?? false,
-      sealId: values.sealId,
+      // sealId: values.sealId,
+      applyCount: 1,
+      applySealCountInfos: values.applySealCountInfos,
       title: values.title,
       type: 'apply',
     };
-    console.log('Success:', obj);
+    console.log('Success:', values);
     applyRequestFn(obj);
   };
+
+  const disabledDate: RangePickerProps['disabledDate'] = (current) => {
+    return current && current < moment().endOf('day');
+  };
+
   return (
     <>
       <div className="top">
         <Form
-          labelCol={{ span: 4 }}
-          wrapperCol={{ span: 14 }}
+          // labelCol={{ span: 4 }}
+          // wrapperCol={{ span: 6 }}
           style={{ maxWidth: 600 }}
           onFinish={onFinish}
         >
           <Form.Item label="文件名称" name="title" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="印章选择" name="sealId" rules={[{ required: true }]}>
-            <Select options={[{ value: '63ec3acde84bd351332c7fd7', label: '公章' }]} />
+          <Form.List name="applySealCountInfos">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                    <Form.Item
+                      {...restField}
+                      label="印章选择"
+                      name={[name, 'sealId']}
+                      rules={[{ required: true, message: 'Missing first name' }]}
+                    >
+                      <Select
+                        options={[
+                          { value: '63ec3acde84bd351332c7fd7', label: '公章' },
+                          { value: '64083725c5a2b97efa3dcf56', label: '测试新的公章' },
+                        ]}
+                        style={{ width: 130 }}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      label="申请次数"
+                      name={[name, 'count']}
+                      rules={[{ required: true, message: 'Missing last name' }]}
+                    >
+                      <Input type="number" />
+                    </Form.Item>
+                    <MinusCircleOutlined onClick={() => remove(name)} />
+                  </Space>
+                ))}
+                <Form.Item>
+                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                    Add field
+                  </Button>
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
+          <Form.Item
+            label="日期选择"
+            name="date"
+            rules={[{ required: true }]}
+            wrapperCol={{ span: 18 }}
+          >
+            <DatePicker.RangePicker
+              disabledDate={disabledDate}
+              showTime={{
+                hideDisabledOptions: true,
+                defaultValue: [moment('00:00:00', 'HH:mm:ss'), moment('23:59:59', 'HH:mm:ss')],
+              }}
+              format="YYYY-MM-DD HH:mm:ss"
+            />
           </Form.Item>
-          <Form.Item label="申请次数" name="applyCount" rules={[{ required: true }]}>
-            <Input type="number" />
-          </Form.Item>
-          <Form.Item label="日期选择" name="date" rules={[{ required: true }]}>
-            <DatePicker.RangePicker />
-          </Form.Item>
-          <Form.Item label="是否限定在印控台使用" name="isconsole" valuePropName="checked">
+          <Form.Item
+            label="是否限定在印控台使用"
+            name="isconsole"
+            valuePropName="checked"
+            labelCol={{ span: 6 }}
+          >
             <Checkbox />
           </Form.Item>
           <Form.Item>
@@ -172,18 +242,25 @@ const Sgt = () => {
             </Button>
           </Form.Item>
         </Form>
-        {canPrint ? (
-          <Button
-            onClick={() => {
-              gaiYinFn();
-            }}
-          >
-            盖印
-          </Button>
-        ) : (
-          <div>该流程已结束</div>
-        )}
+        <div>
+          {applyData.map((item: { id: string; sealName: string }) => {
+            return (
+              <div key={item.id}>
+                <span>{item.sealName as string}</span>
+                <Button
+                  onClick={() => {
+                    stampFn(item.id);
+                  }}
+                >
+                  盖印
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        {/* {canPrint ? <Button onClick={stampFn}>盖印</Button> : <div>该流程已结束</div>} */}
       </div>
+
       <Modal width={1600} visible={open} title="盖章" footer={null} destroyOnClose={true}>
         <div className="messageBox">
           <div style={{ display: 'flex', justifyContent: 'center' }}>
